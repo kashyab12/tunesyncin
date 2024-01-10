@@ -1,4 +1,4 @@
-from flask import Flask, request
+from flask import Flask, request, Response
 import json
 import requests
 import os
@@ -12,8 +12,10 @@ app = Flask(__name__)
 @app.get("/generatePlaylist")
 def get_playlist() -> dict:
     print(request.args)
-    assert len(spotify_client_id) > 0, "Invalid spotify client id, null value obtained!"
-    assert len(spotify_client_secret) > 0, "Invalid spotify client secret, null value obtained!"
+    if not spotify_client_id:
+        return Response("invalid spotify client id, null value obtained!", status=500)
+    if not spotify_client_secret:
+        return Response("invalid spotify client secret, null value obtained!", status=500)
     user1: str = request.args["user1"] 
     spotify_access_token_data: dict = {
         "grant_type": "client_credentials", 
