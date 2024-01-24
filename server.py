@@ -1,13 +1,12 @@
 from flask import Flask, request, Response
+from authlib.integrations.flask_client import OAuth
+from dotenv import load_dotenv
 import json
 import requests
 import os
 
-spotify_access_token_url: str = "https://accounts.spotify.com/api/token"
-spotify_client_id: str = os.environ['SPOTIFY_CLIENT_ID']
-spotify_client_secret: str = os.environ['SPOTIFY_CLIENT_SECRET']
-
 app = Flask(__name__)
+oauth = OAuth(app)
 
 @app.get("/generatePlaylist")
 def get_playlist() -> dict:
@@ -26,3 +25,17 @@ def get_playlist() -> dict:
     assert spotify_acc_tok_req.status_code == 200, f"Received {spotify_acc_tok_req.status_code} status code upon querying spotify for an access code!"
     spotify_access_token: str = spotify_acc_tok_req.json().get("access_token")
     return spotify_access_token
+
+if __name__ == "__main__":
+    # Let's test out OAuth2 with Spotify Account
+    load_dotenv()
+    spotify_access_token_url: str = "https://accounts.spotify.com/api/token"
+    spotify_client_id: str = os.getenv['SPOTIFY_CLIENT_ID']
+    assert spotify_client_id is not None
+    spotify_client_secret: str = os.getenv['SPOTIFY_CLIENT_SECRET']
+    assert spotify_client_secret is not None
+
+    # Defining the OAuth2Session Object
+    spotify_session = OAuth2Session()
+
+    # app.run(debug=True)
