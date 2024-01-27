@@ -1,84 +1,72 @@
-from flask import Flask, request, Response, redirect
+from flask import Flask, request, redirect, url_for, current_app, abort, session, flash
 from urllib.parse import urlencode
 from dotenv import load_dotenv
-import json
 import requests
 import os
-import random
-import string
-import base64
+import secrets
 
+load_dotenv()
 app = Flask(__name__)
+app.config["OAUTH2_PROVIDERS"] = {
+    "spotify": {
+        "client_id": os.environ.get("SPOTIFY_CLIENT_ID"),
+        "client_secret": os.environ.get("SPOTIFY_CLIENT_SECRET"),
+        "authorize_url": "https://accounts.spotify.com/authorize", 
+        "token_url": "https://accounts.spotify.com/api/token",
+        "scopes": ["playlist-read-private", "user-read-recently-played", "user-top-read", "playlist-modify-public"]
+    }, 
+    "apple-music": {
 
-# Global dict to store important info
-request_vars = {}
-
-@app.get("/authorize")
-def authorize() -> None:
-    csrf_token = ''.join(random.choices(string.ascii_letters + string.digits, k=16))
-    request_vars[csrf_token] = {
-        "client_id": request.args.get('client_id'),
-        "client_secret": request.args.get('client_secret'),
-        "scope": "playlist-read-private user-read-recently-played user-top-read playlist-modify-public",
-        "redirect_uri": "http://localhost:5000/callback/spotify"
     }
-    redirect_params = {
-        "client_id": request_vars[csrf_token]["client_id"],
-        "scope": request_vars[csrf_token]["scope"],
+}
+
+@app.route("/authorize/<provider>")
+def oauth2_authorize(provider):
+    provider_data = current_app.config["OAUTH2_PROVIDERS"].get(provider)
+    if provider_data is None:
+        abort(404)
+    session["oauth2_state"] = secrets.token_urlsafe(16)
+    query_string = urlencode({
+        "client_id": provider_data["client_id"],
+        "redirect_uri": url_for("oauth2_callback", provider=provider, _external=True),
         "response_type": "code",
-        "redirect_uri": request_vars[csrf_token]["redirect_uri"],
-        "state": csrf_token 
-    }
-    redirect_url = f"https://accounts.spotify.com/authorize?{urlencode(redirect_params, doseq=True)}"
-    return redirect(redirect_url)
+        "scope": " ".join(provider_data["scopes"]),
+        "state": session["oauth2_state"]
+    })
+    return redirect(f"{provider_data['authorize_url']}?{query_string}")
 
-@app.get("/callback/spotify")
-def spotify_callback() -> None:
-    print("Awesome! We have reached here")
-    if request.args.get("error") is not None:
-        # TODO: Handle the error
-        ...
-    else:
-        access_code = request.args.get("code")
-    csrf_token = request.args.get("state")
-    if csrf_token not in request_vars:
-        # TODO: Abort mission!
-        ...
-    grant_type = "authorization_code"
-    header_auth = base64.b64encode(f"{request_vars[csrf_token]['client_id']}:{request_vars[csrf_token]['client_secret']}".encode())
-    header_content_type = "application/x-www-form-urlencoded"
-    request_body = {
-        "code": access_code,
-        "redirect_uri": request_vars[csrf_token]["redirect_uri"],
-        "grant_type": grant_type
-    }
-    request_header = {
-        "content_type": header_content_type,
-        "Authorization": f"Basic: {str(header_auth)}"
-    }
-    # TODO: Invalid client and 400 response?
-    resp = requests.post("https://accounts.spotify.com/api/token", data=request_body, headers=request_header)
-    assert resp.status_code == 200
-    return redirect("localhost:5000/generatePlaylist")
+@app.get("/callback/<provider>")
+def oauth2_callback(provider):
+    provider_data = current_app.config["OAUTH2_PROVIDERS"].get(provider)
+    if provider_data is None:
+        abort(404)
+    if "error" in request.args:
+        for key, val in request.args.items():
+            if key.startswith("error"):
+                flash(f"{key}: {val}")
+        return redirect(url_for("index"))
+    if request.args["state"] != session.get("oauth2_state") or "code" not in request.args:
+        abort(401)
+    response = requests.post(provider_data["token_url"], data={
+        "client_id": provider_data["client_id"],
+        "client_secret": provider_data["client_secret"],
+        "code": request.args["code"],
+        "grant_type": "authorization_code",
+        "redirect_uri": url_for("oauth2_callback", provider=provider, _external=True)
+    }, 
+    headers={
+        'Accept': 'application/json'
+    })
+    if response.status_code != 200:
+        abort(401)
+    oauth2_token = response.json().get('access_token')
+    if not oauth2_token:
+        abort(401)
+    current_app.config["OAUTH2_PROVIDERS"][provider]['access_token']
 
-
-@app.get("/generatePlaylist")
-def get_playlist() -> dict:
-    print(request.args)
-    # if not spotify_client_id:
-    #     return Response("invalid spotify client id, null value obtained!", status=500)
-    # if not spotify_client_secret:
-    #     return Response("invalid spotify client secret, null value obtained!", status=500)
-    # user1: str = request.args["user1"] 
-    # spotify_access_token_data: dict = {
-    #     "grant_type": "client_credentials", 
-    #     "client_id": spotify_client_id, 
-    #     "client_secret": spotify_client_secret
-    # }
-    # spotify_acc_tok_req: requests.Response = requests.post(spotify_access_token_url, data=spotify_access_token_data)
-    # assert spotify_acc_tok_req.status_code == 200, f"Received {spotify_acc_tok_req.status_code} status code upon querying spotify for an access code!"
-    # spotify_access_token: str = spotify_acc_tok_req.json().get("access_token")
-    # return spotify_access_token
+@app.route("/generatePlaylist")
+def generate_playlist() -> dict:
+    ...
 
 if __name__ == "__main__":
     app.run(debug=True)
