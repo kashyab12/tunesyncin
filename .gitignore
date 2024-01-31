@@ -2,3 +2,4 @@ __pycache__/
 virtual-env/
 const.py
 .env
+node_modules/
