@@ -2,6 +2,7 @@ var express = require("express");
 const { abort } = require("process");
 var router = express.Router()
 
+// TODO: need to get rid of process.env since this won't work in web browser deployment
 const providerConfig = {
     "spotify": {
         "clientId": process.env.SPOTIFY_CLIENT_ID,
